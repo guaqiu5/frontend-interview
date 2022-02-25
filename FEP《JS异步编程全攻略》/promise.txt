@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title></title>
+	</head>
+	<body>
+		<script type="text/javascript">
+			// 自己的Promise对象
+			function MyPromise(fn){
+				this.promiseState = 'pending'
+				this.promiseResult = undefined
+				// 注册本Promise对象的resolve任务函数
+				this.thenCallback = undefined
+				// 注册本Promise对象的reject任务函数
+				this.catchCallback = undefined
+				var _this = this
+				var resolve = function(resolveValue){
+					if(_this.promiseState == 'pending'){
+						// 先将状态和值变更
+						_this.promiseState = 'fulfilled'
+						_this.promiseResult = resolveValue
+						//利用setTimeout模拟Promise对象的异步控制
+						//虽然resolve是在then函数前执行的
+						//但是该函数的回调一定是在Promise对象初始化完毕后执行的
+						//所以我们的回调执行时，thenCallback就已经初始化完毕了
+						if(resolveValue instanceof MyPromise){
+							//当传入的resolve的值的类型是Promise对象本身的时候
+							//不需要使用异步控制，直接用他的then去处理下一步的流程
+							resolveValue.then(function(res){
+								if(_this.thenCallback){
+									// 此时调用then中注册的回调函数时应该传入该对象then之后的结果
+									_this.thenCallback(res)
+								}
+							})
+						}else{
+							setTimeout(function(){
+								if(_this.thenCallback){
+									_this.thenCallback(resolveValue)
+								}
+							})
+						}
+						
+					}
+				}
+				var reject = function(rejectValue){
+					if(_this.promiseState == 'pending'){
+						//将reject的值和状态变更
+						_this.promiseState = 'rejected'
+						_this.promiseResult = rejectValue
+						setTimeout(function(){
+							//当只有catchCallback的时候代表直接写的catch直接触发流程即可
+							if(_this.catchCallback){
+								_this.catchCallback(rejectValue)
+							//如果没有catchCallback但是存在thenCallback代表Promise对象直接使用了then
+							//所以此时应该先让then执行来进行本次then函数的跳过，直到找到catch
+							}else if(_this.thenCallback){
+								_this.thenCallback(rejectValue)
+							}else{
+								throw('no catch found')
+							}
+						})
+					}
+				}
+				if(fn){
+					fn(resolve,reject)
+				}else{
+					throw('Promise resolver undefined is not a fucntion')
+				}
+			}
+			// 由于then都是放在new Promise后编写的，所以他一定比
+			//实例化的回调函数执行晚
+			MyPromise.prototype.then = function(callback){
+				var _this = this
+				//实现链式调用，需要return回去一个新的Promise对象
+				return new MyPromise(function(resolve,reject){
+					//我们通常在then函数执行的时候优先在函数内部注册回调函数任务
+					//等待resolve执行的时候同步注册异步的任务来在该回调后捕获他
+					_this.thenCallback = function(value){
+						// 由于catch的链式调用比较复杂
+						//所以可能在catch执行的时候也会触发thenCallback
+						//所以再此需要判断当前promise对的状态是不是已拒绝
+						if(_this.promiseState == 'rejected'){
+							//如果是reject触发的thenCallback，直接调用下一个对象的reject
+							reject(value)
+						}else{
+							var res = callback(value)
+							//判断。如果某一次then函数返回的是一个rejected的Promise对象
+							//此时我们需要在这里直接注册他的catch并且在catch内部拿到对象的结果
+							//然后通过下一个对象的reject链式的通知最近的catch执行
+							if(res instanceof MyPromise
+								&&res.promiseState == 'rejected'){
+								// console.log(res)
+								res.catch(function(errValue){
+									// console.log(errValue)
+									reject(errValue)
+								})
+							}else{
+								resolve(res)
+							}
+						}
+					}
+				})
+			}
+			MyPromise.prototype.catch = function(callback){
+				var _this = this
+				return new MyPromise(function(resolve,reject){
+					_this.catchCallback = function(value){
+						var res = callback(value)
+						// 由于catch本次的对象是rejected状态，但是如果继续调用默认触发的还是then函数
+						resolve(res)
+					}
+				})
+			}
+			MyPromise.resolve = function(value){
+				return new MyPromise(function(resolve,reject){
+					resolve(value)
+				})
+			}
+			MyPromise.reject = function(value){
+				return new MyPromise(function(resolve,reject){
+					reject(value)
+				})
+			}
+			MyPromise.all = function(promiseArr){
+				var resArr = []
+				var errValue = undefined
+				return new MyPromise(function(resolve,reject){
+					//PromiseAll的特点是，必须等待promiseArr数组中所有的
+					//状态都变成fulfilled之后才能触发then
+					promiseArr.forEach((promiseItem,index) => {
+						promiseItem.then(function(res){
+							resArr[index] = res
+							let success = promiseArr.every(item => {
+								return item.promiseState == 'fulfilled'
+							})
+							if(success){
+								resolve(resArr)
+							}
+						}).catch(function(err){
+							reject(err)
+						})
+					})
+				})
+			}
+			
+			MyPromise.race = function(promiseArr){
+				var resArr = []
+				var errValue = undefined
+				return new MyPromise(function(resolve,reject){
+					//PromiseAll的特点是，必须等待promiseArr数组中所有的
+					//状态都变成fulfilled之后才能触发then
+					promiseArr.forEach((promiseItem,index) => {
+						promiseItem.then(function(res){
+							resolve(res)
+						}).catch(function(err){
+							reject(err)
+						})
+					})
+				})
+			}
+			
+			
+			
+			/**
+			* fn:Generator函数对象
+			*/
+			function generatorFunctionRunner(fn){
+			  //定义分步对象
+			  let generator = fn()
+			  //执行到第一个yield
+			  let step = generator.next()
+			  //定义递归函数
+			  function loop(stepArg,generator){
+			    //获取本次的yield右侧的结果
+			    let value = stepArg.value
+			    //判断结果是不是Promise对象
+			    if(value instanceof Promise || value instanceof MyPromise){
+			      //如果是Promise对象就在then函数的回调中获取本次程序结果
+			      //并且等待回调执行的时候进入下一次递归
+			      value.then(function(promiseValue){
+			        if(stepArg.done == false){
+			          loop(generator.next(promiseValue),generator)
+			        }
+			      })
+			    }else{
+			      //判断程序没有执行完就将本次的结果传入下一步进入下一次递归
+			      if(stepArg.done == false){
+			        loop(generator.next(stepArg.value),generator)
+			      }
+			    }
+			  }
+			  //执行动态调用
+			  loop(step,generator)
+			}
+			
+			function * test(){
+			  var res1 = yield new MyPromise(function(resolve){
+			    setTimeout(function(){
+			      resolve('第一秒运行')
+			    },1000)
+			  })
+			  console.log(res1)
+			  var res2 = yield new MyPromise(function(resolve){
+			    setTimeout(function(){
+			      resolve('第二秒运行')
+			    },1000)
+			  })
+			  console.log(res2)
+			  var res3 = yield new MyPromise(function(resolve){
+			    setTimeout(function(){
+			      resolve('第三秒运行')
+			    },1000)
+			  })
+			  console.log(res3)
+			}
+			generatorFunctionRunner(test)
+		</script>
+	</body>
+</html>
