@@ -17,6 +17,17 @@ function debounceLazy(fn, delay) {
         console.log('触发防抖')
     }
 }
+function exeDebounce(fn,delay){
+    let timer=null
+    return function(...args){
+        if(timer==null||timer==undefined) return
+        clearTimeout(timer)
+        let _this=this
+        setTimeout(()=>{
+            fn.apply(_this,...args)
+        },delay)
+    }
+}
 
 function debounceOnce(fn, delay) {
     let timer = null
@@ -72,4 +83,15 @@ function throttle_v2(fn, time) {
         }
 
     }
+}
+
+function exeThrottle(fn,time){
+   let pre=0
+   return function(...args){
+       let now=Data.now()
+       if(now-pre>time){
+        fn.apply(_this,...args)
+        pre=now
+       }
+   }
 }

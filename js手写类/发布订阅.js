@@ -35,6 +35,23 @@ class EventEmitter {
     }
 }
 
+class EventBus{
+    constructor(){
+        this.listeners=[]
+    }
+    on(type,cb){
+        if(!this.listeners[type]) this.listeners[type]=[]
+        this.listeners[type].push(cb)
+    }
+    emit(type,...args){
+        if(this.listeners[type]){
+            this.listeners[type].forEach((cb)=>{
+                cb(...args)
+            })
+        }
+    }
+}
+
 //测试用例
 const { log } = console
 const bus = new EventEmitter(); //创建实例
